@@ -120,12 +120,15 @@ def start_remote_daemon(name="remote", **create_kwargs):
 
 # --- navigation / page ---
 def goto(url):
-    """Navigate, auto-clearing beforeunload handlers to prevent blocking dialogs."""
+    """Navigate, auto-dismissing any beforeunload dialog via CDP (no JS injection)."""
+    result = cdp("Page.navigate", url=url)
+    # If the page had a beforeunload handler, Chrome shows a dialog that blocks navigation.
+    # Dismiss it at the CDP level — no page JS touched, undetectable by antibot.
     try:
-        js("window.onbeforeunload=null")
+        cdp("Page.handleJavaScriptDialog", accept=True)
     except Exception:
-        pass
-    return cdp("Page.navigate", url=url)
+        pass  # No dialog was shown — normal case
+    return result
 
 def page_info():
     """{url, title, w, h, sx, sy, pw, ph} — viewport + scroll + page size."""
@@ -254,19 +257,27 @@ def upload_file(selector, path):
 
 def dismiss_dialog(accept=True):
     """Dismiss a native browser dialog (alert/confirm/prompt/beforeunload) via CDP.
-    Works even when the JS thread is frozen. Returns the dialog message, or None if no dialog.
+    Works even when the JS thread is frozen — no JS injection, undetectable by antibot.
+    Returns {type, message, url} dict, or None if no dialog was present.
     Use this for beforeunload, unexpected dialogs, or when the page is already frozen.
     For known alert/confirm flows where you want auto-approve without blocking, use capture_dialogs()."""
+    # Peek at recent events for dialog info (non-destructive — only pops dialog events)
     events = drain_events()
-    msg = None
+    info = None
+    remaining = []
     for e in events:
         if e.get("method") == "Page.javascriptDialogOpening":
-            msg = e.get("params", {}).get("message", "")
+            p = e.get("params", {})
+            info = {"type": p.get("type", ""), "message": p.get("message", ""), "url": p.get("url", "")}
+        else:
+            remaining.append(e)
     try:
         cdp("Page.handleJavaScriptDialog", accept=accept)
+        if not info:
+            info = {"type": "unknown", "message": "", "url": ""}
     except Exception:
-        pass
-    return msg
+        pass  # No dialog was showing
+    return info
 
 
 def capture_dialogs():
