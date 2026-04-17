@@ -254,7 +254,9 @@ def upload_file(selector, path):
 
 def dismiss_dialog(accept=True):
     """Dismiss a native browser dialog (alert/confirm/prompt/beforeunload) via CDP.
-    Works even when the JS thread is frozen. Returns the dialog message, or None if no dialog."""
+    Works even when the JS thread is frozen. Returns the dialog message, or None if no dialog.
+    Use this for beforeunload, unexpected dialogs, or when the page is already frozen.
+    For known alert/confirm flows where you want auto-approve without blocking, use capture_dialogs()."""
     events = drain_events()
     msg = None
     for e in events:
@@ -265,6 +267,18 @@ def dismiss_dialog(accept=True):
     except Exception:
         pass
     return msg
+
+
+def capture_dialogs():
+    """Stub window.alert/confirm/prompt so they never block and stash messages.
+    Call BEFORE the action that triggers the dialog; read with dialogs().
+    Good for known flows with multiple alerts or confirm() calls that should auto-approve.
+    For beforeunload or already-frozen pages, use dismiss_dialog() instead."""
+    js("window.__dialogs__=[];window.alert=m=>window.__dialogs__.push(String(m));window.confirm=m=>{window.__dialogs__.push(String(m));return true;};window.prompt=(m,d)=>{window.__dialogs__.push(String(m));return d||'';}")
+
+def dialogs():
+    """Return list of captured dialog messages since last capture_dialogs()."""
+    return json.loads(js("JSON.stringify(window.__dialogs__||[])") or "[]")
 
 
 
