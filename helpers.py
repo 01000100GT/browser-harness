@@ -70,6 +70,9 @@ def page_info():
 _debug_click_counter = 0
 
 def click_at_xy(x, y, button="left", clicks=1):
+    """Click at CSS pixel (x, y). capture_screenshot() saves at device pixels, so divide
+    image coordinates by window.devicePixelRatio before passing them here — see
+    interaction-skills/screenshots.md."""
     if os.environ.get("BH_DEBUG_CLICKS"):
         global _debug_click_counter
         try:
