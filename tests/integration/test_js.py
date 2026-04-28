@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import pytest
+
 from browser_harness import helpers
 
 
@@ -34,3 +36,58 @@ def test_iife_with_internal_return_is_not_double_wrapped():
     with patch("browser_harness.helpers.cdp", side_effect=fake_cdp):
         helpers.js("(function(){ return document.title; })()")
     assert _evaluated_expression(captured) == "(function(){ return document.title; })()"
+
+
+def test_js_raises_on_syntax_error_exception_details():
+    def fake_cdp(method, **kwargs):
+        return {
+            "result": {
+                "type": "object",
+                "subtype": "error",
+                "description": "SyntaxError: Invalid or unexpected token",
+            },
+            "exceptionDetails": {
+                "text": "Uncaught",
+                "lineNumber": 1,
+                "columnNumber": 12,
+            },
+        }
+
+    with patch("browser_harness.helpers.cdp", side_effect=fake_cdp):
+        with pytest.raises(RuntimeError, match="SyntaxError"):
+            helpers.js('return "a\n\nb";')
+
+
+def test_js_raises_on_runtime_error_exception_details():
+    def fake_cdp(method, **kwargs):
+        return {
+            "result": {
+                "type": "object",
+                "subtype": "error",
+                "description": "ReferenceError: missing is not defined",
+            },
+            "exceptionDetails": {
+                "text": "Uncaught",
+                "lineNumber": 0,
+                "columnNumber": 17,
+            },
+        }
+
+    with patch("browser_harness.helpers.cdp", side_effect=fake_cdp):
+        with pytest.raises(RuntimeError, match="ReferenceError"):
+            helpers.js("return missing.value")
+
+
+def test_js_raises_on_error_result_without_exception_details():
+    def fake_cdp(method, **kwargs):
+        return {
+            "result": {
+                "type": "object",
+                "subtype": "error",
+                "description": "Error: evaluation failed",
+            }
+        }
+
+    with patch("browser_harness.helpers.cdp", side_effect=fake_cdp):
+        with pytest.raises(RuntimeError, match="evaluation failed"):
+            helpers.js("throw new Error('evaluation failed')")

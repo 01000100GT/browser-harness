@@ -234,7 +234,24 @@ def js(expression, target_id=None):
     if "return " in expression and not expression.strip().startswith("("):
         expression = f"(function(){{{expression}}})()"
     r = cdp("Runtime.evaluate", session_id=sid, expression=expression, returnByValue=True, awaitPromise=True)
-    return r.get("result", {}).get("value")
+    result = r.get("result", {})
+    details = r.get("exceptionDetails")
+    if details or result.get("subtype") == "error":
+        desc = result.get("description")
+        if not desc and details:
+            desc = details.get("text")
+        desc = desc or "JavaScript evaluation failed"
+        if details:
+            line = details.get("lineNumber")
+            col = details.get("columnNumber")
+            loc = f" at line {line}, column {col}" if line is not None and col is not None else ""
+        else:
+            loc = ""
+        snippet = expression.strip().replace("\n", "\\n")
+        if len(snippet) > 160:
+            snippet = snippet[:157] + "..."
+        raise RuntimeError(f"JavaScript evaluation failed{loc}: {desc}; expression: {snippet}")
+    return result.get("value")
 
 
 _KC = {"Enter": 13, "Tab": 9, "Escape": 27, "Backspace": 8, " ": 32, "ArrowLeft": 37, "ArrowUp": 38, "ArrowRight": 39, "ArrowDown": 40}
