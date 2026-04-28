@@ -6,7 +6,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-import ipc
+import _ipc as ipc
 
 
 def _load_env():

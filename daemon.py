@@ -3,7 +3,7 @@ import asyncio, json, os, socket, sys, time, urllib.request
 from collections import deque
 from pathlib import Path
 
-import ipc
+import _ipc as ipc
 from cdp_use.client import CDPClient
 
 

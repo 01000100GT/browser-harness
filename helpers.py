@@ -3,7 +3,7 @@ import base64, json, os, tempfile, time, urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
-import ipc
+import _ipc as ipc
 
 
 def _load_env():
