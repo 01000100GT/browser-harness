@@ -1,5 +1,5 @@
 """CDP WS holder + IPC relay (Unix socket on POSIX, TCP loopback on Windows). One daemon per BU_NAME."""
-import asyncio, json, os, socket, sys, time, urllib.request
+import asyncio, json, os, socket, sys, time, urllib.error, urllib.request
 from collections import deque
 from pathlib import Path
 
@@ -93,19 +93,36 @@ def get_ws_url():
         raise RuntimeError(f"BU_CDP_URL={url} unreachable after 30s: {last_err} -- is the dedicated automation Chrome running?")
     for base in PROFILES:
         try:
-            port = (base / "DevToolsActivePort").read_text().strip().split("\n", 1)[0].strip()
+            active = (base / "DevToolsActivePort").read_text().splitlines()
         except (FileNotFoundError, NotADirectoryError):
+            continue
+        port = active[0].strip() if active else ""
+        ws_path = active[1].strip() if len(active) > 1 else ""
+        if not port:
             continue
         # Resolve the live WS URL via /json/version instead of trusting the path stored
         # alongside the port in DevToolsActivePort: if Chrome was previously launched
         # with a different --user-data-dir on the same port, that file is left behind
         # with a stale browser UUID and the WS upgrade returns 404.
         deadline = time.time() + 30
+        saw_http_404 = False
         while time.time() < deadline:
             try:
                 return json.loads(urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=1).read())["webSocketDebuggerUrl"]
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    # Chrome 147+ disables /json/* HTTP discovery when remote debugging
+                    # runs on the default user-data-dir (IsUsingDefaultDataDirectory check).
+                    # The websocket itself still works; fall back to the path Chrome wrote
+                    # to DevToolsActivePort, which is fresh because Chrome rewrites it on
+                    # every launch.
+                    saw_http_404 = True
+                    break
+                time.sleep(1)
             except (OSError, KeyError, ValueError):
                 time.sleep(1)
+        if saw_http_404 and ws_path:
+            return f"ws://127.0.0.1:{port}{ws_path}"
         raise RuntimeError(
             f"Chrome's remote-debugging page is open, but DevTools is not live yet on 127.0.0.1:{port} — if Chrome opened a profile picker, choose your normal profile first, then tick the checkbox and click Allow if shown"
         )
